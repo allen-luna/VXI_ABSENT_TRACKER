@@ -1,7 +1,7 @@
 import Form from "../components/Forms"
 
 function Login() {
-    return <Form route="/api/token/" method="login"/>
+    return <Form route="/api/token/" method="AGENT ABSENT TRACKER"/>
 }
 
 export default Login

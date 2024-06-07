@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../constants";
 import styles from "../styles/Form.module.css";
 import { IoEyeOutline, IoEyeOffOutline } from "react-icons/io5";
+import Logo  from "../assets/VXI_Logo 1.png"
 
 function Form({ route, method }) {
   const [addUserData, setAddUserData] = useState({
@@ -38,7 +39,8 @@ function Form({ route, method }) {
     setShowPassword(!showPassword);
   };
 
-  const title = method === "login" ? "Login" : "Register";
+  const title = method === "AGENT ABSENT TRACKER" ? "AGENT ABSENT TRACKER" : "Register";
+  const btn = method === "AGENT ABSENT TRACKER" ? "Login" : "Register";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -46,7 +48,7 @@ function Form({ route, method }) {
 
     try {
       let res;
-      if (method === "login") {
+      if (method === "AGENT ABSENT TRACKER") {
         if (!username || !password) {
           toast.error("Username and password are required.");
           setLoading(false);
@@ -57,7 +59,7 @@ function Form({ route, method }) {
         res = await api.post(route, addUserData);
       }
 
-      if (method === "login") {
+      if (method === "AGENT ABSENT TRACKER") {
         localStorage.setItem(ACCESS_TOKEN, res.data.access);
         localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
         navigate("/");
@@ -67,7 +69,7 @@ function Form({ route, method }) {
       }
     } catch (error) {
       if (error.response) {
-        toast.error(error.response.data.message || (method === "login" ? "Invalid username or password." : "Registration failed. User Already Exists."));
+        toast.error(error.response.data.message || (method === "AGENT ABSENT TRACKER" ? "Invalid username or password." : "Registration failed. User Already Exists."));
       } else if (error.request) {
         toast.error('No response received from server.');
       } else {
@@ -84,6 +86,9 @@ function Form({ route, method }) {
         <Toaster position="top-center" reverseOrder={false} />
         {method === "register" ? (
           <form className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4" onSubmit={handleSubmit}>
+            <div className=' text-center'>
+              <img src={Logo} className='w-20 h-20   mx-auto' alt="VXI LOGO" />
+            </div>
             <h3 className="text-center text-2xl mb-4">{title}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {Object.keys(addUserData).map((key) => (
@@ -128,13 +133,16 @@ function Form({ route, method }) {
                 type="submit"
                 disabled={loading}
               >
-                {loading ? "Loading..." : title}
+                {loading ? "Loading..." : btn}
               </button>
             </div>
           </form>
         ) : (
           <form className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4" onSubmit={handleSubmit}>
-            <h3 className="text-center text-2xl">{title}</h3>
+            <div className=' text-center'>
+              <img src={Logo} className='w-20 h-20   mx-auto' alt="VXI LOGO" />
+            </div>
+            <h3 className="text-center text-2xl py-5">{title}</h3>
             <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="username">
                 NTAccount
@@ -177,7 +185,7 @@ function Form({ route, method }) {
                 type="submit"
                 disabled={loading}
               >
-                {loading ? "Loading..." : title}
+                {loading ? "Loading..." : btn}
               </button>
             </div>
           </form>
