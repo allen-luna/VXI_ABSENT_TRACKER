@@ -1,0 +1,13 @@
+service: vxi-absent-tracker
+runtime: python312
+
+entrypoint: gunicorn -b :$PORT JAM_AGENT_NOTIFICATION_TRACKER.wsgi
+
+env_variables:
+  DJANGO_SETTINGS_MODULE: JAM_AGENT_NOTIFICATION_TRACKER.settings
+
+handlers:
+- url: /static
+  static_dir: static/
+- url: /.*
+  script: auto

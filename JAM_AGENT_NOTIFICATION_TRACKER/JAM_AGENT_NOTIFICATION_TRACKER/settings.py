@@ -14,11 +14,14 @@ from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 import os
+from google.cloud.sql.connector import Connector, IPTypes
+import pg8000
 
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+# BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # Quick-start development settings - unsuitable for production
@@ -58,6 +61,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
 ]
 
 # CORS_ALLOWED_ORIGINS = [
@@ -104,6 +109,32 @@ WSGI_APPLICATION = 'JAM_AGENT_NOTIFICATION_TRACKER.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
+# def getconn(*args, **kwargs):
+#     with Connector() as connector:
+#         conn = connector.connect(
+#             "prj-vxi-i-nonprd-te-tec99:us-central1:vxi-postgresql-database",
+#             "pg8000",
+#             user="vxi-user",
+#             password="qwerty",
+#             db="VXI_AGENT_ABSENT_TRACKER",
+#             ip_type=IPTypes.PRIVATE
+#         )
+#     return conn
+
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'VXI_AGENT_ABSENT_TRACKER',
+#         'USER': 'vxi-user',
+#         'PASSWORD': 'qwerty', 
+#         'HOST': '/cloudsql/{}'.format("prj-vxi-i-nonprd-te-tec99:us-central1:vxi-postgresql-database"),
+#         'PORT': '5432',
+#         # 'OPTIONS': {
+#         #     'connection_factory': getconn,
+#         # },
+#     }
+# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -111,7 +142,7 @@ DATABASES = {
         'USER': 'postgres',
         'PASSWORD': 'qwerty',
         'HOST': 'localhost',
-        'POST': '5432'
+        'PORT': '5432'
     }
 }
 
@@ -150,12 +181,20 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
-STATIC_URL = 'static/'
-
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+REACT_APP_DIR = os.path.join(BASE_DIR, 'frontend')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGIN = True
-CORS_ALLOW_CREDENTIALS = True 
+CORS_ALLOW_CREDENTIALS = True
+
+USE_L10N = True
+USE_TZ = True

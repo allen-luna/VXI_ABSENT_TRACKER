@@ -1,15 +1,117 @@
-from django.http import Http404
-from django.shortcuts import render
-from django.contrib.auth.models import User
+from django.http import Http404, HttpResponse, JsonResponse
+from django.views.generic import View
 from rest_framework import generics, status
-from .serializers import AbsentRequestSerializer, UserProfileSerializer, AbsentGetRequestSerializer
+from .serializers import AbsentRequestSerializer, UserProfileSerializer, AbsentGetRequestSerializer, SSOUserSerializer
+from django.contrib.auth.models import User
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import UserAbsentRequestData, UserProfile
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
 from rest_framework.generics import RetrieveUpdateAPIView
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+import os
+from django.conf import settings
+from .utils import get_user_info
+import requests
+import json
+import pandas as pd
+from io import BytesIO
+from datetime import datetime
+from pytz import timezone, UTC  # Import UTC from pytz for timezone conversion
 
+################# userdomain ####################
+def user_domain(request):
+    username, userdomain = get_user_info() 
+    # https://itechapi.vxiusa.com/api/v1/employeesexistingformat/GetByWidOrHrid
+    # https://api.vxiusa.com/api/GlobalHR/Employees/FindEEByWinIDDomain
+    api_url = f"https://itechapi.vxiusa.com/api/v1/employeesexistingformat/GetByWidOrHrid/{username}/{userdomain}"
+
+    try:
+        response = requests.get(api_url)
+        response_data = json.loads(response.json())["Table"][0] 
+
+        hrid = response_data['ID']
+        FirstName = response_data['FirstName']
+        LastName = response_data['LastName']
+        MiddleName = response_data['MiddleName']
+        HireDate = response_data['HireDate']
+        Team = response_data['Team']
+        TitleName = response_data['TitleName']
+        WindowsID = response_data['WindowsID']
+
+        # Check if user already exists based on WindowsID (nt_account)
+        if UserProfile.objects.filter(nt_account=WindowsID).exists():
+            return HttpResponse("User already exists", status=400)
+
+        user_data = {
+            "id": hrid,
+            "nt_account": WindowsID,
+            "dateHired": HireDate,
+            "hrid": hrid,
+            "firstName": FirstName,
+            "lastName": LastName,
+            "middleName": MiddleName,
+            "position": TitleName,
+            "team": Team,
+            "employeeStatus": "ACTIVE",
+            "userStatus": "User",
+            "country": userdomain,
+        }
+
+        serializer = SSOUserSerializer(data=user_data)
+
+        if serializer.is_valid():
+            # Create User object
+            user = User.objects.create_user(
+                id=hrid,
+                username=WindowsID,
+                password=HireDate.replace("/", "").strip()
+            )
+
+            # Create UserProfile object linked to the User
+            UserProfile.objects.create(
+                id=hrid,
+                user=user,
+                username=WindowsID,
+                password=HireDate.replace("/", "").strip(),
+                nt_account=WindowsID,
+                dateHired=HireDate,
+                hrid=hrid,
+                firstName=FirstName,
+                lastName=LastName,
+                middleName=MiddleName,
+                position=TitleName,
+                team=Team,
+                employeeStatus="ACTIVE",
+                userStatus="user",
+                country=userdomain
+            )
+
+            print("User registered successfully")
+            return HttpResponse("User registered successfully", status=201)
+        else:
+            print(serializer.errors)
+            return HttpResponse(serializer.errors, status=400)
+
+    except requests.exceptions.RequestException as e:
+        print(str(e)) 
+        return HttpResponse({"error": str(e)}, status=500)
+    
+
+#################### get individual domain #############################
+def get_domain(request):
+    username, userdomain = get_user_info()
+    return JsonResponse({'userdomain': userdomain})
+
+################### This function is to serve frontend #######################
+class FrontendAppView(View):
+    def get(self, request):
+        try:
+            with open(os.path.join(settings.REACT_APP_DIR, 'dist', 'index.html')) as f:
+                return HttpResponse(f.read())
+        except FileNotFoundError:
+            raise Http404("Frontend build not found")
 
 
 ################################# for creating absent request ########################
@@ -22,13 +124,33 @@ class AbsentListCreate(generics.ListCreateAPIView):
         return UserAbsentRequestData.objects.filter(author=user)
     
     def perform_create(self, serializer):
+        start_shift_str = self.request.data.get('start_shift')  # "2024-07-14T01:00:00Z"
+        end_shift_str = self.request.data.get('end_shift')  # "2024-07-14T01:00:00Z"
+
+        # Parse datetime string and convert to datetime object in UTC
+        start_shift = datetime.fromisoformat(start_shift_str.replace('Z', '')).replace(tzinfo=UTC)
+        end_shift = datetime.fromisoformat(end_shift_str.replace('Z', '')).replace(tzinfo=UTC)
+
+        print(start_shift)
+        print(end_shift)
+
+        # Continue with serializer validation and saving
         if serializer.is_valid():
             user_profile = self.request.user.userprofile
-            serializer.save(author=self.request.user, team=user_profile.team, name=f"{user_profile.firstName} {user_profile.middleName} {user_profile.lastName}")
+            serializer.save(
+                author=self.request.user,
+                team=user_profile.team,
+                name=f"{user_profile.firstName} {user_profile.middleName} {user_profile.lastName}",
+                start_shift=start_shift,
+                end_shift=end_shift,
+            )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
+
+
+ ################################## Genereted csv or excel file class #########################       
 class AbsentGetRequest(generics.ListAPIView):
     serializer_class = AbsentGetRequestSerializer
     permission_classes = [IsAuthenticated]
@@ -36,6 +158,48 @@ class AbsentGetRequest(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user.userprofile
         return UserAbsentRequestData.objects.filter(team=user.team)
+    
+    def post(self, request):
+        data = json.loads(request.body.decode('utf-8'))
+        to_csv = data.get("file_type")
+        
+        if to_csv == "csv" or to_csv == "excel":
+            queryset = self.get_queryset()
+            if not queryset.exists():
+                return Response({"data": "No Date Request."}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Generate CSV response
+            csv_response = self.generate_csv_response(queryset, to_csv)
+            return csv_response
+
+        return Response({"data": "Invalid file_type specified."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def generate_csv_response(self, queryset, file_type):
+        df = pd.DataFrame.from_dict(list(queryset.values()))
+        
+        # Remove 'id' column
+        df = df.drop(columns=['id'])
+        
+        # File header
+        df.columns = ["Date Request", "Category", "Reason", "Start Shift", "Name", "Team", "End Shift", "Remarks", "Number", "Created Date", "HRID"]
+        
+        # Convert timezone-aware datetimes to timezone-unaware
+        datetime_columns = ["Date Request", "Start Shift", "End Shift", "Created Date"]
+        for column in datetime_columns:
+            df[column] = pd.to_datetime(df[column]).dt.tz_localize(None)
+
+        # Prepare CSV or Excel file
+        if file_type == "excel":
+            with BytesIO() as b:
+                with pd.ExcelWriter(b, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False)
+                response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="VXI_ABSENT_REQUEST.xlsx"'
+        else:
+            response = HttpResponse(df.to_csv(index=False), content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="VXI_ABSENT_REQUEST.csv"'
+
+        return response
     
         
 class AbsentUpdate(generics.UpdateAPIView):
@@ -151,3 +315,84 @@ class UserCreatedRequest(APIView):
         
         return Response(serializer.data)
     
+
+class FilterByDateRequest(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = json.loads(request.body.decode('utf-8'))
+
+        filter_type = data.get('filter_type')
+        file_type = data.get("file_type")
+
+        if file_type:
+            filter_requested_date = UserAbsentRequestData.objects.all()
+
+            if filter_type == "all":
+                filter_requested_date = filter_requested_date.filter(date_request__range=[data.get('from'), data.get('to')])
+                
+                if not filter_requested_date.exists():
+                    return JsonResponse({"data": "No Date Request."})
+                
+                file_response = self.generate_csv_response(filter_requested_date, file_type)
+                serializer = AbsentGetRequestSerializer(filter_requested_date, many=True)
+                return file_response  # Return the file response directly
+
+            elif filter_type == "my bucket":
+                filter_requested_date = filter_requested_date.filter(date_request__range=[data.get('from'), data.get('to')], author=request.user)
+                
+                if not filter_requested_date.exists():
+                    return JsonResponse({"data": "No Date Request."})
+                
+                file_response = self.generate_csv_response(filter_requested_date, file_type)
+                serializer = AbsentGetRequestSerializer(filter_requested_date, many=True)
+                return file_response  # Return the file response directly
+
+        from_date = data.get('from')
+        to_date = data.get('to')
+        if filter_type == "all":
+            filter_requested_date = UserAbsentRequestData.objects.filter(date_request__range=[from_date, to_date])
+            if not filter_requested_date.exists():
+                return JsonResponse({"data": "No Date Request."})
+            serializer = AbsentGetRequestSerializer(filter_requested_date, many=True)
+            return JsonResponse({"data": serializer.data})
+        
+        elif filter_type == "my bucket":
+            current_user = request.user
+            filter_requested_date = UserAbsentRequestData.objects.filter(
+                date_request__range=[from_date, to_date],
+                author=current_user
+            )
+            if not filter_requested_date.exists():
+                return JsonResponse({"data": "No Date Request."})
+            serializer = AbsentGetRequestSerializer(filter_requested_date, many=True)
+            return JsonResponse({"data": serializer.data})
+        
+        return JsonResponse({"data": "Invalid Request"})
+
+    def generate_csv_response(self, queryset, file_type):
+        df = pd.DataFrame.from_dict(list(queryset.values()))
+        
+        # Remove 'id' column
+        df = df.drop(columns=['id'])
+        
+        # File header
+        df.columns = ["Date Request", "Category", "Reason", "Start Shift", "Name", "Team", "End Shift", "Remarks", "Number", "Created Date", "HRID"]
+        
+        # Convert timezone-aware datetimes to timezone-unaware
+        datetime_columns = ["Date Request", "Start Shift", "End Shift", "Created Date"]
+        for column in datetime_columns:
+            df[column] = pd.to_datetime(df[column]).dt.tz_localize(None)
+
+        # Prepare CSV or Excel file
+        if file_type == "excel":
+            with BytesIO() as b:
+                with pd.ExcelWriter(b, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False)
+                response = HttpResponse(b.getvalue(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="VXI_ABSENT_REQUEST.xlsx"'
+        else:
+            response = HttpResponse(df.to_csv(index=False), content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="VXI_ABSENT_REQUEST.csv"'
+
+        return response

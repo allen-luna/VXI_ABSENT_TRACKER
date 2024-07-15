@@ -7,4 +7,6 @@ urlpatterns = [
     path('absent-requests/update/<int:pk>/', views.AbsentUpdate.as_view(), name='absent-update'),
     path('update/user/<int:pk>/', views.UpdateAddedUser.as_view(), name='user-update'),
     path('delete/user/<int:pk>/', views.DeleteUserProfileView.as_view(), name='user-delete'),
+    path('userdomain/', views.get_domain, name='userdomain'),
+    path('filter-date/', views.FilterByDateRequest.as_view(), name='date_filter'),
 ]

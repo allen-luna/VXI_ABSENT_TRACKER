@@ -6,11 +6,12 @@ class UserAbsentRequestData(models.Model):
     date_request = models.DateField()
     category = models.CharField(max_length=100)
     reason = models.CharField(max_length=100)
-    start_shift = models.DateTimeField()
+    start_shift = models.CharField()
     name = models.CharField(max_length=100, default="")
     team = models.CharField(max_length=100)
-    end_shift = models.DateTimeField()
+    end_shift = models.CharField()
     remarks = models.TextField()
+    number = models.CharField()
     created_date = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="userabsentrequest")
 
@@ -29,6 +30,7 @@ class UserProfile(models.Model):
     team = models.CharField(max_length=100)
     employeeStatus = models.CharField(max_length=100)
     userStatus = models.CharField(max_length=100)
+    country = models.CharField()
 
     def __str__(self):
         return self.nt_account
